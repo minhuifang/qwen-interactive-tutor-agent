@@ -1,32 +1,37 @@
-# Architecture
+# MVP 架构与里程碑
 
-## 主链路
+领域已改为前端算法教学，以 JavaScript 实现 LeetCode Hot 100 的两数之和、无重复字符的最长子串。
 
-```text
-题目输入
-  -> Problem Parser
-  -> Solution Generator
-  -> Deterministic Verifier
-  -> Teaching Designer
-  -> Lesson/Motion Compiler
-  -> Lesson Player
-  -> Student Answer Evaluator
-  -> Misconception Diagnoser
-  -> Adaptive Tutor
-```
+## 第一阶段：固定数据闭环（已实现）
 
-## 模型路由建议
+Lesson fixture → assertLesson → React Player → 检查点输入 → evaluateAnswer → 鼓励 / 定位补讲。
 
-- 图片题目识别：Qwen VL。
-- 数学解题：Qwen Math。
-- 教学设计和 Motion JSON：Qwen Plus。
-- 疑难结果复核：Qwen Max。
-- 短答案判断与结构修复：Qwen Flash。
-- 最终讲解词配音：Qwen3 TTS Instruct Flash。
+Frame 表示可回放的画面状态，包含数组索引、Map、变量、代码行、板书和讲解。当前每步 4.5 秒，无音频。判题仅处理规定检查点，不执行学生代码，不声称评估完整算法能力。
 
-## MVP 边界
+## 第二阶段：受限 Qwen 教学工作流（两数之和完整链路已验收）
 
-1. 先定义通用 lesson schema，不让模型重复生成整页 HTML。
-2. 实现一个通用 Lesson Player 和一种数学题 Motion 渲染器。
-3. 用三道题覆盖正确、计算错误、概念错误三条教学路由。
-4. 讲解词确认后再调用 TTS，并缓存已生成资源。
+服务端接收固定题目 ID 和教学风格，加载可信算法状态，由 Qwen 生成教学目标和六步讲解。新增 Zod 严格模型输出契约，校验字段、长度、数量与步骤 ID 顺序；编译器仅替换白名单讲解字段，其余 Lesson 属性由可信数据装配。失败保留原课件。
+
+包含安全错误提示、Token 用量、10 分钟进程缓存、45 秒超时、无自动重试、串行生成与每小时 12 次进程限额。接口只支持本机同来源调用；上线需补鉴权与持久化预算。此阶段不生成任意算法、状态帧或学生诊断；讲解内容仍需人工复核。见 `step-2-qwen.md`。
+
+2026-09-11：修复 Worker 不支持 fetch redirect:error 导致的请求前异常。使用 manual 并显式拒绝 3xx，避免转发密钥。qwen3.7-plus 为两数之和真实生成六步课件，用量 1857 Token。无界面 Chromium 完成真实缓存、课件显示、步骤切换、规则判题/补讲定位、模拟失败保留课件、恢复固定课件验收，无页面运行时错误。新题解析复用的请求方式同时修复；随后完成“合并区间”完整题和缺失信息题的两次真实解析及人工确认页面验收，合计 1067 Token，详见 intake-acceptance.md。
+
+## 第三阶段：语音与动态补讲
+
+前置增加的新题入口已实现：文本输入 → 结构化题意草稿 → 人工澄清与确认。Problem 协议在 `apps/web/lib/problem-schema.ts`，解析服务在 `apps/web/lib/server/parse-problem.ts`。确认不触发模型调用，草稿来源区分 qwen/manual。原文和结果在页面内存中，题目改动撤销旧确认。
+
+已增加新题解法草稿生成：confirmed Problem → 服务端校验 → Qwen 生成 Solution → 严格格式校验 → 文本展示。协议在 solution-schema.ts，接口为 /api/solutions/generate。模型不能控制 verification 字段；生成服务固定标记 not_run。编辑题意会卸载解法面板，取消客户端等待并清除旧结果。
+
+Web 本地验证已接通：Solution → 人工审核 JSON 测试用例 → 同源会话令牌 → Vite 本地 middleware → Docker 隔离执行 → 宿主精确比较 expected → 页面逐例显示。Node 控制器仅在开发服务运行，不在 Worker 内 spawn；模型代码只在容器内执行。端点为 POST /api/local-runner/session 和 /api/local-runner/verify，固定回环监听 3001，无新端口。增加严格来源检查、单并发、12次/小时限额、体积/读取超时限制和异常脱敏。已用真实 HTTP 链路验证通过、不符、超时与后续样例跳过；状态详见 runner-setup.md。
+
+通用执行轨迹仍未实现，不能把新题直接交给两个固定示例的播放器。“样例通过”不能标成完整正确性证明。没有学生代码编辑器或线上多用户执行服务。
+
+最终讲解稿确定后并行生成 TTS 和动作锚点。只有语音服务明确提供时间戳时直接使用，否则增加对齐服务。用 audio.currentTime 驱动状态，不假设 TTS 默认有逐字时间戳。按住说话问答优先，全双工后置。
+
+## 技术边界
+
+当前应用为 Sites 生成的 Vinext + React 前端。协议独立于框架，后续可迁移至原生 Next.js。后端、队列、持久化按需要逐步引入；MVP 算法题不需要原规划的 SymPy 几何校验。固定参考算法由 Node 测试验证。
+
+## 验收与演示
+
+两数之和先输入 [2,4] 体验数值/下标混淆诊断，再输入 [1,2]。滑动窗口先输入 1 体验左边界回退补讲，再输入 2。刷新清空进度。

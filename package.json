@@ -1,0 +1,12 @@
+{
+  "name": "qwen-interactive-tutor-agent",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm --dir apps/web dev",
+    "build": "pnpm --dir apps/web build",
+    "typecheck": "pnpm --dir apps/web exec tsc --noEmit",
+    "test": "node --test tests/*.test.ts"
+  },
+  "engines": { "node": ">=22.18.0" }
+}
