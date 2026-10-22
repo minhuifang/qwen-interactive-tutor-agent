@@ -1,4 +1,4 @@
-# AlgoStudio · 算法教学 Agent（自动修复循环）
+# AlgoStudio · 算法教学 Agent（实时教学 + 自动修复循环）
 
 > 给它一道题和几条人工核对的样例，它自己写代码、在禁网沙箱里跑、读失败用例、修改、再跑——直到通过或用尽轮次。**「通过」两个字由执行器判定，模型无权宣布。**
 
@@ -59,7 +59,39 @@ pnpm dev            # http://localhost:3001
 
 没有 Docker / 没有密钥时，页面会自动退化为**轨迹回放**（数据由真实循环代码 + 脚本化策略生成，页面明确标注为演示），交互与协议完全一致。
 
-## 3. 架构
+## 3. 实时教学（可打断 · 可引导）
+
+自动解题是「替你把题做出来」，实时教学是「陪你把题学明白」。两者共用一套工程，但内核不同：
+
+| | 实时教学 | 自动解题 |
+|---|---|---|
+| 目标 | 把人教会 | 把题做出来 |
+| 学生 | 参与者，随时插话 | 旁观者，等结果 |
+| 输出 | 分步讲解 + 三级提示 | 代码 + 执行结果 |
+| 结束条件 | 学生说懂了 | 执行器判定通过 |
+
+**教学模式**。引导（默认）：讲完一步反问一次，提示分三级且只升不降——级别 1 只给方向，级别 2 给到数据结构，级别 3 给到关键一行；学生点「直接告诉我」才会出现完整代码。直接讲：把思路推演和代码一次讲透，不反问。学生可随时切换。
+
+**打断与恢复是真逻辑，不是动画效果**：
+
+- 学生插话时，讲解流立即中断（客户端 abort，服务端同时停笔）；
+- 回答只针对当前步骤，prompt 明确禁止顺势把后面的内容讲完；
+- 答完游标不动，`resume` 事件把步骤号原样带回——这条不变量由测试钉住（`teaching.test.mjs`）。
+
+**流式是 token 级的**。`packages/agent/model.mjs` 的 `createChatStream` 直接消费 SSE，`stream: true`，模型边写前端边显示，所以打断是让模型停笔，而不只是停止吐字。没有注入流式通道时（例如测试里）自动回退到"一次调用 + 分片播放"，行为一致但不再可中断生成。
+
+**语音是两级降级**：朗读优先走服务端 `/api/speech`（已配置 TTS 时），拿不到音频就自动改用浏览器内置 `speechSynthesis`；语音输入用浏览器 `SpeechRecognition`。不配置任何语音服务也能用，配了体验更好。
+
+```bash
+node --test packages/agent/teaching.test.mjs        # 会话不变量：13 项
+node --test packages/runner/teaching-http.test.mjs  # 端点接线：5 项
+```
+
+教学事件同样走 NDJSON：`meta / plan / step_start / delta / ask / step_end / hint_start / hint_delta / hint_end / answer_start / answer_delta / answer_end / reveal / notice / resume / error / done`。
+
+> **诚实声明**：没有 `DEEPSEEK_API_KEY` 时，内置题目（两数之和）跑的是脚本化策略——讲解、提示、追问答复都是预设内容，页面与事件里都标注 `scripted`。其他题目会直接报错而不是假装会讲。真实模型下的教学效果我没有跑过评测，本仓库不做没有跑过的声明。
+
+## 4. 架构
 
 ```mermaid
 flowchart LR
@@ -75,14 +107,14 @@ flowchart LR
     UI -- "NDJSON 事件流" --> MW
 ```
 
-### 3.1 模型能做什么、不能做什么
+### 4.1 模型能做什么、不能做什么
 
 | 工具 | 模型可以 | 模型不可以 |
 |------|---------|-----------|
 | `run_tests { code, note }` | 提交一份 `solve(input)` 实现并拿到逐例结果 | 修改样例、选择只跑部分用例、得到任何未执行的信息 |
 | `finish { code, approach, ... }` | 提交最终答案与讲题 | 声称"已通过"——若提交代码与上次执行的不一致，系统自动补跑一次，以执行器为准 |
 
-### 3.2 终止条件
+### 4.2 终止条件
 
 | 条件 | 最终状态 | 说明 |
 |------|---------|------|
@@ -92,11 +124,11 @@ flowchart LR
 | 模型调用超预算 | `budget_limit` | 默认 8 次调用/任务 |
 | 用户停止 | `cancelled` | 已收到的事件保留 |
 
-### 3.3 轨迹协议（NDJSON）
+### 4.3 轨迹协议（NDJSON）
 
 每行一个事件，浏览器端 `lib/agent-stream.ts` 与静态演示页共用同一套结构：`meta / round_start / thought / tool_call / tool_result / round_end / final / error / done`。未知行会被丢弃而不是崩溃——流是可以"部分成功"的。
 
-## 4. 评测
+## 5. 评测
 
 ```bash
 # 1) 校验评测集本身：60 条样例的预期输出必须与参考实现一致
@@ -113,7 +145,7 @@ node eval/run.mjs --limit 5  # 冒烟
 
 > **诚实声明**：模型实测的通过率数字需要 `DEEPSEEK_API_KEY` + 本地 Docker 沙箱（`colima start tutor-sandbox`）才能产生——这两项依赖不在 CI 或本仓库中，因此我们不做没有跑过的实验声明。跑完 `eval/run.mjs` 后，把 `eval/results.json` 的摘要贴进本节即可。
 
-## 5. 测试
+## 6. 测试
 
 ```bash
 node --test packages/agent/loop.test.mjs         # 循环语义：11 项
@@ -129,7 +161,7 @@ node packages/agent/record-demo.mjs              # 重新生成演示轨迹
 - 工具参数不合法 → 作为观察返回，循环继续，非法调用不能触达沙箱；
 - 串行：一个运行未结束时拒绝第二个请求。
 
-## 6. 安全模型（继承并扩展自原项目）
+## 7. 安全模型（继承并扩展自原项目）
 
 - 模型代码只作为 **stdin 数据**进入容器，在容器内求值；宿主没有 eval / VM；
 - 容器参数：`--network=none --read-only --cap-drop=ALL --no-new-privileges --user=65534 --memory=128m --pids-limit=32`、8 秒墙钟、32 KiB 输出上限、镜像锁 `node@sha256:` 摘要、`--pull=never`；
@@ -140,7 +172,7 @@ node packages/agent/record-demo.mjs              # 重新生成演示轨迹
 
 **Agent 化新增的一层**：`acknowledged` 的语义被拆开了。人工确认的对象是*题目与样例预期*（UI 上显式勾选），而*被执行的代码*是 Agent 自己写的——这个变化在 `http-middleware` 里有注释说明，也是本仓库与"人肉点确认"版本的核心差异。
 
-## 7. 设计取舍
+## 8. 设计取舍
 
 | 问题 | 选择 | 代价 |
 |------|------|------|
@@ -151,7 +183,7 @@ node packages/agent/record-demo.mjs              # 重新生成演示轨迹
 | 轨迹在服务端流式输出 | NDJSON 逐行，未知行丢弃 | 客户端需要容忍乱序到达的渲染 |
 | 演示能力 | 回放模式 + 明确的"脚本化策略 + 模拟执行"徽章 | 无法伪造也不试图伪造真实模型运行 |
 
-## 8. Roadmap
+## 9. Roadmap
 
 - [ ] `run_tests` 支持模型传入**额外生成的输入**（预期仍由执行器/参考实现判定，防止自证）
 - [ ] 评测接入 CI：夜间跑 5 题冒烟，把通过率写回 README
@@ -159,7 +191,7 @@ node packages/agent/record-demo.mjs              # 重新生成演示轨迹
 - [ ] 无序输出比较器（当前要求精确 JSON 相等）
 - [ ] RAG：把题解知识库接入提示上下文
 
-## 9. 目录
+## 10. 目录
 
 ```
 packages/agent/        循环、工具协议、轨迹协议、模型适配、演示录制（零依赖 ESM）

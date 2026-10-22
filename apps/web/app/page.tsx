@@ -8,12 +8,13 @@ import { Input } from '@/components/ui/input';
 import { GenerationPanel } from '@/components/generation-panel';
 import { StreamTeaching } from '@/components/stream-teaching';
 import { AgentStudio } from '@/components/agent-studio';
+import { TeachingStudio } from '@/components/teaching-studio';
 import { lessons } from '@/lib/lessons';
 import { evaluateAnswer } from '../../../packages/lesson-schema/src/assessment';
 import type { Diagnosis, LessonId, Lesson } from '../../../packages/lesson-schema/src/index';
 
 export default function Home() {
-  const [mode, setMode] = useState<'agent' | 'intake' | 'lessons'>('agent');
+  const [mode, setMode] = useState<'teach' | 'agent' | 'intake' | 'lessons'>('teach');
   const [lessonId, setLessonId] = useState<LessonId>('two-sum');
   const [step, setStep] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -51,11 +52,13 @@ export default function Home() {
       <span className="prototype"><span/> 本地教学演示</span>
     </header>
     <nav className="mode-switch" aria-label="工作区">
+      <Button variant={mode === 'teach' ? 'secondary' : 'ghost'} aria-pressed={mode === 'teach'} onClick={() => { setMode('teach'); setPlaying(false); }}>实时教学</Button>
       <Button variant={mode === 'agent' ? 'secondary' : 'ghost'} aria-pressed={mode === 'agent'} onClick={() => { setMode('agent'); setPlaying(false); }}>Agent 解题</Button>
       <Button variant={mode === 'intake' ? 'secondary' : 'ghost'} aria-pressed={mode === 'intake'} onClick={() => { setMode('intake'); setPlaying(false); }}>直接讲题</Button>
       <Button variant={mode === 'lessons' ? 'secondary' : 'ghost'} aria-pressed={mode === 'lessons'} onClick={() => setMode('lessons')}>两道示例课件</Button>
-      <span>Agent 自己跑测试直到通过；讲题与课件负责把思路讲清楚</span>
+      <span>实时教学可打断、可引导；Agent 自己跑测试直到通过；讲题与课件负责把思路讲清楚</span>
     </nav>
+    <div hidden={mode !== 'teach'}><TeachingStudio visible={mode === 'teach'} /></div>
     <div hidden={mode !== 'agent'}><AgentStudio visible={mode === 'agent'} /></div>
     <div hidden={mode !== 'intake'}><StreamTeaching visible={mode === 'intake'} /></div>
     <div className="workspace" hidden={mode !== 'lessons'}>

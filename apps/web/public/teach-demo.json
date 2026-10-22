@@ -1,0 +1,416 @@
+{
+  "title": "实时教学示例会话（两数之和）",
+  "note": "脚本化策略生成的演示轨迹：讲解分步进行，学生插话后仅针对当前步骤作答并回到原步骤继续。不含真实模型调用。",
+  "events": [
+    {
+      "type": "meta",
+      "sessionId": "b294747ae1ac0d70",
+      "kind": "scripted",
+      "mode": "guide",
+      "model": "",
+      "action": "plan"
+    },
+    {
+      "type": "plan",
+      "steps": [
+        {
+          "index": 0,
+          "title": "先看清题目到底要什么",
+          "goal": "确认返回的是下标，不是数值"
+        },
+        {
+          "index": 1,
+          "title": "先写出最直觉的做法",
+          "goal": "暴力两重循环，把正确性先拿到手"
+        },
+        {
+          "index": 2,
+          "title": "找到瓶颈：我们在重复比较",
+          "goal": "用哈希表把「找另一个数」变成 O(1)"
+        },
+        {
+          "index": 3,
+          "title": "复杂度与边界情况",
+          "goal": "说清为什么是 O(n)，以及哪些输入要当心"
+        }
+      ]
+    },
+    {
+      "type": "resume",
+      "index": 0
+    },
+    {
+      "type": "meta",
+      "sessionId": "b294747ae1ac0d70",
+      "kind": "scripted",
+      "mode": "guide",
+      "model": "",
+      "action": "teach"
+    },
+    {
+      "type": "step_start",
+      "index": 0
+    },
+    {
+      "type": "delta",
+      "text": "先别急着写代码。题目要的是「和为目标"
+    },
+    {
+      "type": "delta",
+      "text": "值的两个整数的下标」，所以返回值是位"
+    },
+    {
+      "type": "delta",
+      "text": "置，不是那两个数字本身。另外题目保证"
+    },
+    {
+      "type": "delta",
+      "text": "每种输入只有一个答案，且同一个元素不"
+    },
+    {
+      "type": "delta",
+      "text": "能重复使用——这两条决定了后面不用处"
+    },
+    {
+      "type": "delta",
+      "text": "理多解和自匹配。把输入输出先说清楚："
+    },
+    {
+      "type": "delta",
+      "text": "进数组 nums 和目标 targe"
+    },
+    {
+      "type": "delta",
+      "text": "t，出一对下标 [i, j] 且 i"
+    },
+    {
+      "type": "delta",
+      "text": " < j。"
+    },
+    {
+      "type": "ask",
+      "index": 0,
+      "text": "如果 nums 是 [3,2,4]、target 是 6，答案应该是 [1,2] 还是 [2,4]？为什么？"
+    },
+    {
+      "type": "step_end",
+      "index": 0
+    },
+    {
+      "type": "resume",
+      "index": 0
+    },
+    {
+      "type": "meta",
+      "sessionId": "b294747ae1ac0d70",
+      "kind": "scripted",
+      "mode": "guide",
+      "model": "",
+      "action": "answer"
+    },
+    {
+      "type": "answer_start",
+      "index": 0,
+      "question": "为什么返回的是下标，不是那两个数？"
+    },
+    {
+      "type": "answer_delta",
+      "text": "题目要的是「下标」，也就是元素在数组"
+    },
+    {
+      "type": "answer_delta",
+      "text": "里的位置编号，从 0 开始。所以 ["
+    },
+    {
+      "type": "answer_delta",
+      "text": "3,2,4] 配 target=6 "
+    },
+    {
+      "type": "answer_delta",
+      "text": "返回的是 [1,2]，不是 [2,4"
+    },
+    {
+      "type": "answer_delta",
+      "text": "]。这一步最容易看错，先看清楚再动手"
+    },
+    {
+      "type": "answer_delta",
+      "text": "。"
+    },
+    {
+      "type": "answer_end",
+      "index": 0
+    },
+    {
+      "type": "resume",
+      "index": 0,
+      "interrupted": true
+    },
+    {
+      "type": "meta",
+      "sessionId": "b294747ae1ac0d70",
+      "kind": "scripted",
+      "mode": "guide",
+      "model": "",
+      "action": "teach"
+    },
+    {
+      "type": "step_start",
+      "index": 1
+    },
+    {
+      "type": "delta",
+      "text": "最直觉的办法是枚举：固定第一个数 i"
+    },
+    {
+      "type": "delta",
+      "text": "，再拿它和后面每一个 j 试一遍，看"
+    },
+    {
+      "type": "delta",
+      "text": "相加等不等于 target。这是两重"
+    },
+    {
+      "type": "delta",
+      "text": "循环，外层 i 从 0 到 n-1，"
+    },
+    {
+      "type": "delta",
+      "text": "内层 j 从 i+1 到 n-1。先"
+    },
+    {
+      "type": "delta",
+      "text": "把它写出来，因为它是正确的——在优化"
+    },
+    {
+      "type": "delta",
+      "text": "之前，先保证有个能跑通的版本，这一步"
+    },
+    {
+      "type": "delta",
+      "text": "的价值是给你一个对照基准。"
+    },
+    {
+      "type": "ask",
+      "index": 1,
+      "text": "这个写法里，同一个元素会不会被用两次？内层 j 从 i+1 开始是为了什么？"
+    },
+    {
+      "type": "step_end",
+      "index": 1
+    },
+    {
+      "type": "resume",
+      "index": 1
+    },
+    {
+      "type": "meta",
+      "sessionId": "b294747ae1ac0d70",
+      "kind": "scripted",
+      "mode": "guide",
+      "model": "",
+      "action": "hint"
+    },
+    {
+      "type": "hint_start",
+      "index": 1,
+      "level": 0
+    },
+    {
+      "type": "hint_delta",
+      "text": "提示一：如果你要检查所有两两组合，需"
+    },
+    {
+      "type": "hint_delta",
+      "text": "要几层循环？"
+    },
+    {
+      "type": "hint_end",
+      "index": 1,
+      "level": 1
+    },
+    {
+      "type": "resume",
+      "index": 1
+    },
+    {
+      "type": "meta",
+      "sessionId": "b294747ae1ac0d70",
+      "kind": "scripted",
+      "mode": "guide",
+      "model": "",
+      "action": "teach"
+    },
+    {
+      "type": "step_start",
+      "index": 2
+    },
+    {
+      "type": "delta",
+      "text": "暴力解的瓶颈在于：为了找 targe"
+    },
+    {
+      "type": "delta",
+      "text": "t - nums[i]，我们把剩下的"
+    },
+    {
+      "type": "delta",
+      "text": "数全扫了一遍。但这个问题其实可以反过"
+    },
+    {
+      "type": "delta",
+      "text": "来问——不是「去找谁和我配」，而是「"
+    },
+    {
+      "type": "delta",
+      "text": "我需要的那个数之前出现过吗」。如果一"
+    },
+    {
+      "type": "delta",
+      "text": "边遍历一边把看过的数值和它的下标记进"
+    },
+    {
+      "type": "delta",
+      "text": "一个 Map，那么对当前的 x，只需"
+    },
+    {
+      "type": "delta",
+      "text": "要查一次 map 里有没有 targ"
+    },
+    {
+      "type": "delta",
+      "text": "et - x。查 Map 是常数时间"
+    },
+    {
+      "type": "delta",
+      "text": "，于是两重循环塌缩成一重。这就是典型"
+    },
+    {
+      "type": "delta",
+      "text": "的用空间换时间。"
+    },
+    {
+      "type": "ask",
+      "index": 2,
+      "text": "为什么可以「一边遍历一边查」，而不是先把整个数组都存进 Map 再查？"
+    },
+    {
+      "type": "step_end",
+      "index": 2
+    },
+    {
+      "type": "resume",
+      "index": 2
+    },
+    {
+      "type": "meta",
+      "sessionId": "b294747ae1ac0d70",
+      "kind": "scripted",
+      "mode": "guide",
+      "model": "",
+      "action": "answer"
+    },
+    {
+      "type": "answer_start",
+      "index": 2,
+      "question": "为什么要用哈希表？"
+    },
+    {
+      "type": "answer_delta",
+      "text": "因为暴力解每次都要把剩下的数全扫一遍"
+    },
+    {
+      "type": "answer_delta",
+      "text": "才能找到配对，而这个问题只关心「某个"
+    },
+    {
+      "type": "answer_delta",
+      "text": "数出现没出现过」——这是判断存在性，"
+    },
+    {
+      "type": "answer_delta",
+      "text": "正好是哈希表的强项，查找是常数时间。"
+    },
+    {
+      "type": "answer_delta",
+      "text": "代价是多占一份 O(n) 的内存，所"
+    },
+    {
+      "type": "answer_delta",
+      "text": "以叫空间换时间。 你已经说到关键点了"
+    },
+    {
+      "type": "answer_delta",
+      "text": "——要不要自己试着把这一步写出来？写"
+    },
+    {
+      "type": "answer_delta",
+      "text": "不出来就点「再提示一点」。"
+    },
+    {
+      "type": "answer_end",
+      "index": 2
+    },
+    {
+      "type": "resume",
+      "index": 2,
+      "interrupted": true
+    },
+    {
+      "type": "meta",
+      "sessionId": "b294747ae1ac0d70",
+      "kind": "scripted",
+      "mode": "guide",
+      "model": "",
+      "action": "hint"
+    },
+    {
+      "type": "hint_start",
+      "index": 2,
+      "level": 0
+    },
+    {
+      "type": "hint_delta",
+      "text": "提示二：把「数值 → 下标」存进一个"
+    },
+    {
+      "type": "hint_delta",
+      "text": " Map。遍历到 x 时，查 map"
+    },
+    {
+      "type": "hint_delta",
+      "text": ".has(target - x)，有"
+    },
+    {
+      "type": "hint_delta",
+      "text": "就直接返回两个下标。"
+    },
+    {
+      "type": "hint_end",
+      "index": 2,
+      "level": 2
+    },
+    {
+      "type": "resume",
+      "index": 2
+    },
+    {
+      "type": "meta",
+      "sessionId": "b294747ae1ac0d70",
+      "kind": "scripted",
+      "mode": "guide",
+      "model": "",
+      "action": "reveal"
+    },
+    {
+      "type": "reveal",
+      "index": 2,
+      "code": "function solve(input) {\n  const { nums, target } = input;\n  const seen = new Map();\n  for (let i = 0; i < nums.length; i++) {\n    const needed = target - nums[i];\n    if (seen.has(needed)) return [seen.get(needed), i];\n    seen.set(nums[i], i);\n  }\n  return null;\n}",
+      "explanation": "一次遍历：先查 needed 在不在 seen 里，命中就直接返回两个下标；没命中才把当前数值和下标存进去。先查后存保证同一个元素不会被用两次，也让 [3,3] target=6 这类输入得到 [0,1]。"
+    },
+    {
+      "type": "resume",
+      "index": 2
+    }
+  ]
+}
