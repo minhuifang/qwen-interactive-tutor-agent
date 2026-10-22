@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Agent 解题轨迹 · 自动修复循环演示</title>
+<meta name="description" content="一个把「写代码 → 沙箱执行 → 读失败用例 → 修改」做成闭环的算法教学 Agent，附可回放的执行轨迹。" />
+<style>
+  :root{
+    --bg:#f5f7fb; --fg:#1b2940; --card:#fff; --primary:#2856e8; --muted:#607189;
+    --border:#dce4ef; --soft:#eef2f8; --ok:#0f7a56; --bad:#a3353f; --warn:#8a5a00;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{--bg:#101a2c;--fg:#e7edf7;--card:#19263c;--primary:#96b0ff;--muted:#b6c1d2;--border:#3b4a60;--soft:#223047}
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 Inter,"PingFang SC","Microsoft YaHei",system-ui,sans-serif}
+  a{color:inherit;text-decoration:none}
+  .wrap{max-width:1120px;margin:0 auto;padding:28px 22px 80px}
+  header.top{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding-bottom:22px;border-bottom:1px solid var(--border)}
+  .logo{display:grid;place-items:center;width:38px;height:38px;border-radius:11px;background:var(--primary);color:#fff;font-family:var(--mono);font-size:14px;font-weight:700}
+  .brand{font-size:19px;font-weight:700;letter-spacing:-.3px}
+  .brand small{display:block;font-size:12px;font-weight:400;color:var(--muted);letter-spacing:0}
+  .top nav{margin-left:auto;display:flex;gap:14px;font-size:13px;color:var(--muted)}
+  .top nav a:hover{color:var(--primary)}
+  h1{font-size:30px;line-height:1.4;letter-spacing:-.8px;margin:34px 0 12px;max-width:760px}
+  .lede{max-width:720px;color:var(--muted);font-size:15px;line-height:1.85}
+  .stats{display:flex;gap:10px;flex-wrap:wrap;margin:24px 0 6px}
+  .stat{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 14px;font-size:12px;color:var(--muted)}
+  .stat b{display:block;font-size:19px;color:var(--fg);font-family:var(--mono);line-height:1.3}
+  .stat.ok b{color:var(--ok)}
+  .badge{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:5px 10px;border-radius:6px;border:1px solid rgba(245,180,60,.4);background:rgba(245,180,60,.12);color:var(--warn)}
+  .badge.ok{border-color:rgba(28,190,140,.4);background:rgba(28,190,140,.12);color:var(--ok)}
+  .panel{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px;margin-top:22px}
+  .panel-head{display:flex;justify-content:space-between;align-items:center;gap:10px;padding-bottom:14px;border-bottom:1px solid var(--border);font-size:14px;font-weight:650}
+  .panel-head small{font-weight:400;color:var(--muted);font-size:12px}
+  button{font:inherit;font-size:13px;padding:7px 13px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:inherit;cursor:pointer}
+  button:hover{border-color:var(--primary);color:var(--primary)}
+  .trace{padding-top:8px;max-height:min(74vh,900px);overflow:auto}
+  .round{padding:14px 0 14px 24px;border-left:2px solid var(--border);margin-left:6px}
+  .round:last-of-type{border-left-color:transparent}
+  .round-head{display:flex;align-items:center;gap:9px;font-size:13px;font-weight:650;margin-bottom:10px}
+  .no{font-family:var(--mono);font-size:11px;color:var(--primary);background:var(--soft);border-radius:4px;padding:1px 6px}
+  .verdict{font-size:11px;font-weight:500;padding:2px 7px;border-radius:4px;background:var(--soft);color:var(--muted)}
+  .verdict.passed{background:rgba(28,190,140,.14);color:var(--ok)}
+  .verdict.failed,.verdict.invalid_arguments{background:rgba(200,80,80,.13);color:var(--bad)}
+  .label{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:650;color:var(--muted);margin-bottom:6px}
+  .label em{font-style:normal;font-size:10.5px;background:rgba(245,180,60,.16);color:var(--warn);border-radius:3px;padding:1px 5px}
+  .thought p{margin:0 0 10px;font-size:13.5px;line-height:1.85;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 12px}
+  .note{font-size:12.5px;color:var(--muted);line-height:1.75;margin:0 0 8px}
+  details.code{border:1px solid var(--border);border-radius:8px;overflow:hidden;margin:0 0 10px;background:var(--bg)}
+  details.code summary{display:flex;justify-content:space-between;padding:8px 11px;font-size:12px;color:var(--muted);cursor:pointer;list-style:none}
+  details.code pre{margin:0;max-height:250px;overflow:auto;background:#132039;color:#d2e0ff;padding:10px 0;font:12.5px/1.8 var(--mono)}
+  details.code pre div{display:flex;padding:0 12px;min-width:max-content}
+  details.code pre i{width:26px;flex:0 0 auto;color:#6b809f;font-style:normal;user-select:none}
+  .cases{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+  .case{font-size:12px;padding:4px 9px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--muted)}
+  .case.passed{color:var(--ok);border-color:rgba(28,190,140,.35);background:rgba(28,190,140,.08)}
+  .case.failed{color:var(--bad);border-color:rgba(200,80,80,.35);background:rgba(200,80,80,.07)}
+  .case em{font-style:normal;font-family:var(--mono);font-size:11px;margin-left:5px;opacity:.85}
+  .final-meta{display:flex;gap:16px;flex-wrap:wrap;align-items:center;font-size:12px;color:var(--muted);border-top:1px solid var(--border);padding-top:14px;margin-top:8px}
+  .final-meta b{color:var(--fg);font-family:var(--mono);font-size:14px}
+  .solution{margin-top:14px;border:1px solid var(--border);border-radius:12px;padding:16px 18px;background:var(--bg)}
+  .solution h3{margin:0 0 8px;font-size:15px}
+  .solution .badge-ok{display:inline-block;font-size:12px;font-weight:600;padding:3px 9px;border-radius:5px;background:rgba(28,190,140,.16);color:var(--ok);margin-bottom:10px}
+  .solution p{margin:0 0 10px;font-size:13.5px;line-height:1.9}
+  .solution ol{margin:0 0 10px;padding-left:20px;font-size:13px;line-height:1.85;color:var(--muted)}
+  .facts{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+  .facts span{font-size:12px;background:var(--card);border:1px solid var(--border);border-radius:6px;padding:5px 9px;color:var(--muted)}
+  .facts b{color:var(--fg);margin-right:6px}
+  .cautions{margin:0;padding-left:18px;font-size:12.5px;line-height:1.8;color:var(--muted)}
+  .foot{margin-top:30px;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
+  .foot section{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px 18px}
+  .foot h4{margin:0 0 7px;font-size:13px}
+  .foot p{margin:0;font-size:12.5px;line-height:1.85;color:var(--muted)}
+  .foot code{font-family:var(--mono);font-size:11.5px;background:var(--soft);padding:1px 5px;border-radius:4px}
+  .warnbox{margin-top:12px;font-size:12px;line-height:1.8;color:var(--warn);background:rgba(245,180,60,.1);border:1px solid rgba(245,180,60,.3);border-radius:8px;padding:10px 12px}
+  @media(max-width:640px){h1{font-size:24px}.wrap{padding:20px 15px 60px}.panel{padding:15px}}
+  @media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="logo">&gt;_</div>
+    <div class="brand">AlgoStudio Agent<small>算法教学 Agent · 自动修复循环</small></div>
+    <nav>
+      <a href="https://github.com/minhuifang/qwen-interactive-tutor-agent" target="_blank" rel="noreferrer">GitHub ↗</a>
+      <a href="https://github.com/minhuifang/qwen-interactive-tutor-agent#readme" target="_blank" rel="noreferrer">README</a>
+    </nav>
+  </header>
+
+  <h1>它不是一次写对，而是跑一次、读失败、再改一次。</h1>
+  <p class="lede">
+    下面这道「两数之和」，Agent 前两轮都没通过：第一次返回了数值本身而不是下标，第二次在重复元素上把同一个下标用了两次。
+    每一轮它都拿到了容器里的真实执行结果，第三轮才通过。轨迹是这条链路逐步产生的，没有人工补写。
+  </p>
+
+  <div class="stats" id="stats"></div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <span>执行轨迹 <small id="meta"></small></span>
+      <span style="display:flex;gap:8px;align-items:center">
+        <span class="badge" id="badge">演示轨迹 · 脚本化策略 + 模拟执行</span>
+        <button id="replay">重新播放</button>
+      </span>
+    </div>
+    <div class="trace" id="trace" role="log" aria-live="polite"></div>
+  </div>
+
+  <div class="foot">
+    <section>
+      <h4>这条链路在做什么</h4>
+      <p>模型只被允许调用两个工具：<code>run_tests</code> 在禁网只读容器里执行代码，<code>finish</code> 提交答案。它拿不到执行权，也拿不到「通过」的定义权。</p>
+    </section>
+    <section>
+      <h4>为什么结论可信</h4>
+      <p>「通过」由执行器逐例比较 JSON 得出。模型说通过但执行没过，界面显示的是执行结果；提交的代码如果没跑过，会强制补跑一次。</p>
+    </section>
+    <section>
+      <h4>怎么自己跑</h4>
+      <p><code>pnpm install &amp;&amp; pnpm dev</code>，配置 <code>DEEPSEEK_API_KEY</code>，再 <code>colima start tutor-sandbox</code>。没有 Docker 时页面自动退化为轨迹回放。</p>
+    </section>
+  </div>
+
+  <div class="warnbox">
+    说明：本页展示的是<strong>回放轨迹</strong>，由真实循环代码 + 脚本化策略 + 模拟执行结果生成，用于演示交互与协议，<strong>不是一次真实模型运行</strong>。
+    真实运行需要本地 Docker 沙箱与模型密钥，实测数据请见 README 的评测章节；未跑过的评测不会写成通过率。
+  </div>
+</div>
+
+<script>
+const CASE_LABELS = { passed:'通过', failed:'答案不符', timeout:'超时', runtime_error:'运行异常', output_limit:'输出超限', invalid_output:'输出无效', unavailable:'执行环境不可用' };
+const VERDICT = { passed:'样例通过', failed:'仍有失败', submitted:'已提交', invalid_arguments:'调用不合法', no_tool:'未调用工具' };
+const template = (code) => code.split('\n').map((line, i) => `<div><i>${i + 1}</i><code>${escapeHtml(line) || ' '}</code></div>`).join('');
+const escapeHtml = value => String(value).replace(/[&<>"']/g, ch => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[ch]));
+
+function renderRound(round, list) {
+  const verdict = list.find(e => e.type === 'round_end');
+  const body = list.map(event => {
+    if (event.type === 'thought') {
+      return `<div class="thought"><span class="label">◈ 思考</span><p>${escapeHtml(event.text)}</p></div>`;
+    }
+    if (event.type === 'tool_call') {
+      const finish = event.tool === 'finish';
+      const note = typeof event.args?.note === 'string' ? event.args.note : '';
+      return `<div><span class="label">${finish ? '⚑' : '▸'} ${finish ? 'finish' : 'run_tests'}${event.auto ? '<em>自动验证</em>' : ''}</span>`
+        + (note ? `<p class="note">${escapeHtml(note)}</p>` : '')
+        + (event.code ? `<details class="code"><summary><span>${finish ? '提交的代码' : '本轮代码'}</span><span>${event.code.split('\n').length} 行</span></summary><pre>${template(event.code)}</pre></details>` : '')
+        + '</div>';
+    }
+    if (event.type === 'tool_result') {
+      return `<div><span class="label">${event.status === 'examples_passed' ? '✓' : '!'} 执行结果 · ${event.passed}/${event.total} 通过</span>`
+        + (event.note ? `<p class="note">${escapeHtml(event.note)}</p>` : '')
+        + `<div class="cases">${event.results.map(r => `<span class="case ${r.status}">样例 ${r.index} · ${CASE_LABELS[r.status] || r.status}${r.status !== 'passed' && r.actual !== undefined ? `<em>实际 ${escapeHtml(r.actual)}</em>` : ''}</span>`).join('')}</div></div>`;
+    }
+    return '';
+  }).join('');
+  return `<section class="round"><div class="round-head"><span class="no">${String(round).padStart(2, '0')}</span><span>第 ${round} 轮</span>${verdict ? `<span class="verdict ${verdict.verdict}">${VERDICT[verdict.verdict] || verdict.verdict}</span>` : ''}</div>${body}</section>`;
+}
+
+function renderFinal(event) {
+  const s = event.solution || {};
+  const steps = Array.isArray(s.steps) && s.steps.length ? `<ol>${s.steps.map(x => `<li>${escapeHtml(x)}</li>`).join('')}</ol>` : '';
+  const facts = [s.timeComplexity && `<span><b>时间</b>${escapeHtml(s.timeComplexity)}</span>`, s.spaceComplexity && `<span><b>空间</b>${escapeHtml(s.spaceComplexity)}</span>`].filter(Boolean).join('');
+  const cautions = Array.isArray(s.cautions) && s.cautions.length ? `<ul class="cautions">${s.cautions.map(x => `<li>${escapeHtml(x)}</li>`).join('')}</ul>` : '';
+  return `<div class="final-meta">
+      <span><b>${event.rounds}</b> 轮</span>
+      <span><b>${event.verification.passed}/${event.verification.total}</b> 样例通过</span>
+      ${event.usage && event.usage.total_tokens ? `<span><b>${event.usage.total_tokens}</b> tokens</span>` : ''}
+      <span>${event.verification.status === 'examples_passed' ? '执行器已确认' : '未经执行器验证'}</span>
+    </div>
+    <div class="solution">
+      <span class="badge-ok">已通过全部样例</span>
+      <h3>${escapeHtml(event.reason)}</h3>
+      ${s.approach ? `<p>${escapeHtml(s.approach)}</p>` : ''}
+      ${steps}
+      ${facts ? `<div class="facts">${facts}</div>` : ''}
+      ${cautions}
+      ${s.code ? `<details class="code" open><summary><span>最终代码</span><span>${s.code.split('\n').length} 行</span></summary><pre>${template(s.code)}</pre></details>` : ''}
+    </div>
+    <p class="note" style="margin-top:10px">${escapeHtml(event.verification.notice || '')}</p>`;
+}
+
+async function boot() {
+  const response = await fetch('agent-demo.json', { cache: 'no-cache' });
+  const data = await response.json();
+  const events = data.events || [];
+  const final = events.find(e => e.type === 'final');
+  const meta = events.find(e => e.type === 'meta');
+  const results = events.filter(e => e.type === 'tool_result');
+  const first = results[0];
+
+  document.getElementById('meta').textContent = meta ? ` · ${meta.caseCount} 个已确认样例 · 策略 ${meta.model}` : '';
+  document.getElementById('stats').innerHTML = [
+    `<div class="stat"><b>${data.problem?.cases?.length ?? 3}</b>已确认样例</div>`,
+    `<div class="stat"><b>${final ? final.rounds : '-'}</b>修复轮次</div>`,
+    `<div class="stat"><b>${results.length}</b>次真实执行</div>`,
+    `<div class="stat ok"><b>${final ? `${final.verification.passed}/${final.verification.total}` : '-'}</b>最终通过</div>`,
+  ].join('');
+
+  const rounds = new Map();
+  for (const event of events) {
+    if (!event.round || event.type === 'final' || event.type === 'meta' || event.type === 'done') continue;
+    if (!rounds.has(event.round)) rounds.set(event.round, []);
+    rounds.get(event.round).push(event);
+  }
+  const ordered = [...rounds.entries()].sort((a, b) => a[0] - b[0]);
+  const instant = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const trace = document.getElementById('trace');
+  let timer = null;
+
+  function play() {
+    if (timer) clearInterval(timer);
+    trace.innerHTML = '';
+    if (instant) {
+      trace.innerHTML = ordered.map(([round, list]) => renderRound(round, list)).join('') + (final ? renderFinal(final) : '');
+      return;
+    }
+    let index = 0;
+    timer = setInterval(() => {
+      trace.insertAdjacentHTML('beforeend', renderRound(ordered[index][0], ordered[index][1]));
+      trace.scrollTop = trace.scrollHeight;
+      index += 1;
+      if (index >= ordered.length) {
+        clearInterval(timer); timer = null;
+        if (final) trace.insertAdjacentHTML('beforeend', renderFinal(final));
+        trace.scrollTop = 0;
+      }
+    }, 700);
+  }
+
+  document.getElementById('replay').addEventListener('click', play);
+  play();
+}
+
+boot().catch(error => {
+  document.getElementById('trace').innerHTML = `<p class="note">无法载入轨迹：${escapeHtml(error.message)}。请确认 agent-demo.json 与本页在同一目录。</p>`;
+});
+</script>
+</body>
+</html>

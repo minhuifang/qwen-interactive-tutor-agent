@@ -1,97 +1,175 @@
-# AlgoStudio · 算法互动教学 MVP
+# AlgoStudio · 算法教学 Agent（自动修复循环）
 
-第一阶段已实现两道 LeetCode Hot 100 题：两数之和、无重复字符的最长子串。使用 JavaScript 讲解，固定课件数据驱动数组、Map、指针、窗口和参考代码高亮。
+> 给它一道题和几条人工核对的样例，它自己写代码、在禁网沙箱里跑、读失败用例、修改、再跑——直到通过或用尽轮次。**「通过」两个字由执行器判定，模型无权宣布。**
 
-当前首页新增“新题解析”：粘贴任意算法题文本 → Qwen 整理结构化题意 → 编辑并澄清 → 人工确认 Problem。现有课件在“两道示例课件”工作区保留。注意新题解析不等于解题或生成动画。
+[![CI](https://github.com/minhuifang/qwen-interactive-tutor-agent/actions/workflows/ci.yml/badge.svg)](./.github/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
 
-## 启动
+**在线看交互（无需装任何东西）**：[轨迹回放演示页](./docs/demo/index.html) · 仓库内的[演示轨迹数据](./docs/demo/agent-demo.json)
 
-需要 Node 22.18+（推荐 Node 24）和 pnpm，以直接运行 TypeScript 测试。系统默认 Node 18 不适用。
+![轨迹回放演示页：两数之和，三轮修复，用例逐条变绿](./docs/demo/preview.png)
 
-```sh
-pnpm --dir apps/web install --frozen-lockfile
-pnpm dev
+> 截图为静态回放页（脚本化策略 + 模拟执行，页面有明确标注）。真实运行的动图待录：`pnpm dev` 后打开 http://localhost:3001，切到「Agent 解题」点「开始运行」，录 8–12 秒即可。
+
+---
+
+## 1. 这是什么
+
+一个运行在本地、面向算法教学场景的**受限解题 Agent**：
+
+| 能力 | 说明 |
+|------|------|
+| 解题循环 | `写实现 → run_tests → 读失败用例 → 修改 → 再跑`，默认最多 4 轮 |
+| 真实执行反馈 | 每个样例在独立 Docker 容器中运行（禁网、只读、非 root、128 MB、8 秒/例），逐例返回真实结果 |
+| 工具调用协议 | 模型只有两个工具：`run_tests` 与 `finish`；参数不合法会被作为「观察」返回给模型自行修复，而不是中断 |
+| 轨迹可视化 | 每一轮的思考、工具调用、逐例结果、修复依据，全程流式渲染 |
+| 教学 | 通过后输出讲题文本：思路、逐步推演、复杂度、边界注意事项 |
+
+它**不是**：
+
+- ❌ 不是自主 Agent——没有联网搜索、没有自由文件访问、工具面只有两个；
+- ❌ 不宣称"验证通过 = 解法正确"——只验证你确认过的 1–8 条样例；
+- ❌ 不是多租户沙箱——这是本地单用户的教学演示，宿主控制器仍能访问 Docker daemon。
+
+这些边界写在代码和文档里，也写在页面上的状态徽章里。
+
+原有能力保留：「直接讲题」把任意题目文本直接讲明白；「两道示例课件」提供两数之和与无重复字符最长子串的动画课件。Agent 不改变它们的语义。
+
+## 2. 快速开始
+
+```bash
+git clone https://github.com/minhuifang/qwen-interactive-tutor-agent
+cd qwen-interactive-tutor-agent
+
+# 1) 依赖（Node >= 22.18，推荐 pnpm）
+pnpm install
+
+# 2) 模型密钥（DeepSeek）
+cp .env.example apps/web/.env.local
+#    编辑 apps/web/.env.local，填入 DEEPSEEK_API_KEY
+
+# 3) 隔离执行器（macOS + Colima，一次性配置见 docs/runner-setup.md）
+colima start tutor-sandbox
+
+# 4) 启动（端口固定 3001，被占用时报错而不是自动递增）
+pnpm dev            # http://localhost:3001
 ```
 
-打开 http://localhost:3001/；为保持本地验证来源检查一致，端口固定为3001，被占用时会报错而不是自动递增。
+打开页面后默认进入 **Agent 解题**：题目与三条样例已预填，勾选确认，点「开始运行」。
 
-```sh
-pnpm test
-pnpm typecheck
-pnpm build
+没有 Docker / 没有密钥时，页面会自动退化为**轨迹回放**（数据由真实循环代码 + 脚本化策略生成，页面明确标注为演示），交互与协议完全一致。
+
+## 3. 架构
+
+```mermaid
+flowchart LR
+    subgraph Browser["浏览器 (localhost:3001)"]
+        UI["AgentStudio 表单"] --> TX["AgentTrace 时间轴"]
+    end
+    subgraph Vite["Vite dev server (Node 进程)"]
+        MW["http-middleware<br/>/api/local-runner/agent"] --> LOOP["runAgent 循环<br/>packages/agent"]
+        LOOP --> MODEL["DeepSeek chat/completions<br/>function calling"]
+        LOOP --> RUN["verifyJob<br/>packages/runner"]
+    end
+    RUN --> D[["Docker 容器 xN<br/>禁网/只读/非root/128MB/8s"]]
+    UI -- "NDJSON 事件流" --> MW
 ```
 
-## 已完成
+### 3.1 模型能做什么、不能做什么
 
-- 两题各六步讲解，支持前后切换、自动演示、暂停和重播。
-- 检查点答题：返回下标、窗口左边界。
-- 规则诊断：重复下标、数值/下标混淆、左边界回退等。
-- 答对鼓励，答错定位相关步骤并展示补讲。
-- 共享 TypeScript 课件契约、基础运行时校验与算法边界测试。
+| 工具 | 模型可以 | 模型不可以 |
+|------|---------|-----------|
+| `run_tests { code, note }` | 提交一份 `solve(input)` 实现并拿到逐例结果 | 修改样例、选择只跑部分用例、得到任何未执行的信息 |
+| `finish { code, approach, ... }` | 提交最终答案与讲题 | 声称"已通过"——若提交代码与上次执行的不一致，系统自动补跑一次，以执行器为准 |
 
-## 当前边界
+### 3.2 终止条件
 
-已实现服务端 Qwen 教学生成工作流：选择题目与风格 → 加载可信算法状态 → Qwen 生成提纲/逐步讲解 → Zod 严格校验 → 装配课件 → 播放。2026-09-11 已通过“两数之和 / 初学者 / qwen3.7-plus”真实端到端验收：输入 967、输出 890、合计 1857 Token；浏览器验证缓存命中、AI 讲解显示、步骤切换、规则判题及补讲定位、模拟失败回退与恢复固定课件。其余课件组合尚未逐项真实验收。新题解析也已通过“合并区间”完整题和缺失信息题的真实调用及页面确认验收，见 docs/intake-acceptance.md。
+| 条件 | 最终状态 | 说明 |
+|------|---------|------|
+| `finish` 且执行器确认通过 | `examples_passed` | 提交代码与被验证代码哈希一致 |
+| 轮次用尽 | `round_limit` | 返回最后一次执行结果，如实标注 |
+| 执行器连续两次不可用 | `blocked` | 不空转、不烧额度 |
+| 模型调用超预算 | `budget_limit` | 默认 8 次调用/任务 |
+| 用户停止 | `cancelled` | 已收到的事件保留 |
 
-示例课件是两道已知题目的受限工作流，不是任意题目的自主解题 Agent。示例算法状态、参考代码、答案与检查点由程序固定。新题默认“直接讲题”：原题直接调用一次模型，文字边生成边显示，不经过题意表单或完整解法 JSON 校验；支持补充提问、按段 TTS。参考代码按需独立生成，运行仍需主动核对与授权。新题算法动画、图片/PDF/OCR、ASR、后端持久化或学生代码编辑器尚未接入。生成文本的事实正确性仍需人工复核，不能把格式校验或有限样例通过等同于完整正确性证明。详见 [直接教学](docs/direct-teaching.md)。
+### 3.3 轨迹协议（NDJSON）
 
-Sites 脚手架使用 React + TypeScript + Vinext（Vite 上的 Next.js API 兼容实现），不是原生 Next.js 运行时。当前未启动 NestJS、Redis、数据库或 Python 服务；算法教学第一阶段不需要数学校验服务。
+每行一个事件，浏览器端 `lib/agent-stream.ts` 与静态演示页共用同一套结构：`meta / round_start / thought / tool_call / tool_result / round_end / final / error / done`。未知行会被丢弃而不是崩溃——流是可以"部分成功"的。
 
-## 阅读代码
+## 4. 评测
 
-- `packages/lesson-schema/src/index.ts`：课件协议和校验。
-- `apps/web/lib/lessons.ts`：两题的输入、讲解、状态帧、参考代码。
-- `packages/lesson-schema/src/assessment.ts`：检查点诊断。
-- `apps/web/app/page.tsx`：统一播放器与答题反馈。
-- `tests/lessons.test.ts`：协议、判题和可信参考算法测试。
+```bash
+# 1) 校验评测集本身：60 条样例的预期输出必须与参考实现一致
+node eval/self-check.mjs
 
-## 下一步
+# 2) 真实评测（需要密钥 + 沙箱，花钱）
+node eval/run.mjs            # 20 题，写 eval/results.json
+node eval/run.mjs --limit 5  # 冒烟
+```
 
-确认后的 Problem 已接入解法草稿生成与手动发起的本地容器样例验证。新题代表链路验收不代表任意题目的准确性保证。通用执行轨迹、动态补讲、新题 TTS 和字词时间对齐后置。两道示例课件已接入真实 TTS 与步骤级同步，见 [配音说明](docs/tts.md)。模型生成代码不能直接在主服务、Node VM 或浏览器中作为可信代码执行；代码仅进入独立容器，密钥不进入容器。
+评测集是 20 道固定题（`eval/problems.mjs`），每题 2–4 条样例；`self-check` 会先证明**评测集本身没错**——预期输出与参考实现逐条核对，fixture 写错会让构建失败，而不是悄悄拉低通过率。
 
-## 模型配置：DeepSeek 文本 + 百炼 TTS
+当前已验证的事实：**评测集自检通过（20 题 / 60 条样例，预期输出与参考实现逐条一致）**；16 项单元与接线测试、类型检查与生产构建全绿。
 
-1. 在 `apps/web/.env.local` 填入 `DEEPSEEK_API_KEY`。首次检出可复制 `apps/web/.env.example` 为该文件。根目录 `.env` 不由当前 Web 服务读取。
-2. `DEEPSEEK_MODEL` 默认 `deepseek-flash`，地址为 `https://api.deepseek.com`。全部文本入口统一走 DS 官方 API，缺少密钥不会回退百炼。`DASHSCOPE_API_KEY` 仅供 TTS，保留原配置即可；旧百炼文本模型与地址配置不再使用。
-3. 重启 `pnpm dev` 并刷新页面，即可直接讲题，或选择两道示例课件点击“用 DeepSeek 生成课件”。
-4. 成功后查看新讲解、学习目标、执行步骤与 Token 用量。失败会保留当前课件，可随时恢复固定课件。
+> **诚实声明**：模型实测的通过率数字需要 `DEEPSEEK_API_KEY` + 本地 Docker 沙箱（`colima start tutor-sandbox`）才能产生——这两项依赖不在 CI 或本仓库中，因此我们不做没有跑过的实验声明。跑完 `eval/run.mjs` 后，把 `eval/results.json` 的摘要贴进本节即可。
 
-不要把密钥发到聊天中，也不要加 `VITE_` / `NEXT_PUBLIC_` 前缀。配置文件已被 Git 忽略。真实文本调用消耗 DS 额度，语音调用消耗百炼额度，请分别在控制台核对。
+## 5. 测试
 
-额度保护：单次输出上限 4096 Token、45 秒超时、不自动重试、同一进程一次只生成一份、每小时最多 12 次模型请求（失败也计数），成功结果缓存 10 分钟。缓存命中展示原请求用量，并标注本次未调用模型。限流和缓存都在进程内，重启/多实例会重置或分开统计，不能当作线上计费保障。切换题目仅取消浏览器等待，已发起的模型请求仍可能消耗额度。
+```bash
+node --test packages/agent/loop.test.mjs         # 循环语义：11 项
+node --test packages/runner/agent-http.test.mjs  # HTTP 接线：5 项
+pnpm test                                        # 全部（含原有 TS 测试）
+node packages/agent/record-demo.mjs              # 重新生成演示轨迹
+```
 
-生成 API 暂时仅允许本机同来源调用，没有上线鉴权。本阶段保留本地开发，不发布带密钥的服务；上线前必须补充身份验证、持久化限流和密钥管理。
+循环的关键不变量都有测试钉住：
 
-当前接入见 [DeepSeek 配置](docs/deepseek.md)，`docs/step-2-qwen.md` 仅保留历史记录。
+- 模型 `finish` 未执行过的代码 → 自动补跑一次，结论仍来自执行器（`not_passed` 而非模型说的通过）；
+- 执行器不可用时不继承旧结论——提交未验证代码 → `not_run`/`blocked`；
+- 工具参数不合法 → 作为观察返回，循环继续，非法调用不能触达沙箱；
+- 串行：一个运行未结束时拒绝第二个请求。
 
-## 新题解析与人工确认
+## 6. 安全模型（继承并扩展自原项目）
 
-首页粘贴 20～6000 字符的题目文本；“填入示例文本”仅演示有效括号题的输入格式，不限制可输入题目。点击“用 AI 解析题目”会把原文发给已配置的百炼模型。请勿提交隐私、凭据或机密内容。
+- 模型代码只作为 **stdin 数据**进入容器，在容器内求值；宿主没有 eval / VM；
+- 容器参数：`--network=none --read-only --cap-drop=ALL --no-new-privileges --user=65534 --memory=128m --pids-limit=32`、8 秒墙钟、32 KiB 输出上限、镜像锁 `node@sha256:` 摘要、`--pull=never`；
+- 清理失败 → 中间件进入 `blocked`，停止接受新作业，而不是带病继续；
+- 接口只存在于 localhost 的 Vite 开发服务：回环 + Host/Origin + 会话令牌 + 单并发 + 每小时限额；
+- 模型调用 `redirect: 'manual'`，3xx 一律拒绝，密钥不会被转发到重定向目标；
+- 题目原文与工具返回值都是**不可信数据**：只进入 user/tool 消息，从不拼进 system 指令。
 
-解析接口 `POST /api/problems/parse` 接收 `{ "text": "题目原文" }`，返回标题、描述、输入输出、约束、样例和待澄清问题。它不解题、不执行代码、不抓取 URL，题目中的指令只作为不可信数据。模型未提供的信息不会由客户端自动填成正确答案。
+**Agent 化新增的一层**：`acknowledged` 的语义被拆开了。人工确认的对象是*题目与样例预期*（UI 上显式勾选），而*被执行的代码*是 Agent 自己写的——这个变化在 `http-middleware` 里有注释说明，也是本仓库与"人肉点确认"版本的核心差异。
 
-草稿字段可修改。核心字段为空、样例不完整或仍有待澄清问题时不能确认；处理疑问并勾选核对后，可确认并查看 Problem JSON。再次编辑会撤销确认，修改原文会清除旧解析结果。没有提供约束或样例时，不代表题目已被数学验证，用户需自行核对。
+## 7. 设计取舍
 
-网络失败时原文与已有草稿保留，可选择“手动整理”完成录入和确认，来源会明确标为 manual，不冒充 AI 结果。确认仅保存在当前页面内存中，切换工作区保留、刷新丢失，不会自动进入解题或播放。
+| 问题 | 选择 | 代价 |
+|------|------|------|
+| 循环跑在哪 | Node 中间件（与 Docker 控制器同进程），而不是 Worker | Worker 里不能 spawn；但循环逻辑与框架绑定在 dev server |
+| 模型不可用/不支持工具时 | 提示模型使用工具，不中断任务 | 一轮可能被浪费在 no_tool 上 |
+| 样例从哪来 | 只用人工确认的样例，模型不能自造预期 | 覆盖有限；换来"通过"两个字有意义 |
+| `finish` 代码与上次执行不一致 | 自动补跑一次验证 | 多一次容器消耗；换来结论永远对应被提交的代码 |
+| 轨迹在服务端流式输出 | NDJSON 逐行，未知行丢弃 | 客户端需要容忍乱序到达的渲染 |
+| 演示能力 | 回放模式 + 明确的"脚本化策略 + 模拟执行"徽章 | 无法伪造也不试图伪造真实模型运行 |
 
-解析接口独立使用 45 秒超时、4096 输出 Token 上限、每进程每小时 12 次调用、单请求并发锁，无缓存或自动重试。与示例课件、解法接口分别计数，三类合计最多每进程每小时 36 次；上线前需要统一的持久化预算。
+## 8. Roadmap
 
-## 新题解法草稿
+- [ ] `run_tests` 支持模型传入**额外生成的输入**（预期仍由执行器/参考实现判定，防止自证）
+- [ ] 评测接入 CI：夜间跑 5 题冒烟，把通过率写回 README
+- [ ] 执行轨迹导出为可分享的 permalink（轨迹 JSON 已可序列化）
+- [ ] 无序输出比较器（当前要求精确 JSON 相等）
+- [ ] RAG：把题解知识库接入提示上下文
 
-2026-09-11 已安装专用 Colima/Docker 环境，修复 Node 镜像下载，并把固定摘要隔离执行器连接到本地页面。34 项自动测试、真实同源接口到容器运行及超时验收通过；随后完成独立浏览器交互、桌面/移动端验证面板检查，以及一次真实合并区间生成（2886 Token）和同一返回代码的4例边界验证。失败UI使用模拟响应，讲解仍存在需人工复核的浅拷贝说明。详见 [浏览器验收](docs/browser-acceptance.md) 与 [隔离环境状态](docs/runner-setup.md)。
+## 9. 目录
 
-人工确认后出现“03 / 生成解法草稿”。手动点击才调用 `POST /api/solutions/generate`，请求为 `{ confirmed: Problem }`。服务端重新验证确认数据及待澄清问题；这不是鉴权或语义正确性证明。模型返回思路、步骤、JavaScript `solve(input)` 代码、输入约定、复杂度、假设和注意事项。代码仅作为文本显示，不解析执行，不使用 eval、Node VM 或浏览器运行器。
+```
+packages/agent/        循环、工具协议、轨迹协议、模型适配、演示录制（零依赖 ESM）
+packages/runner/       Docker 执行器与本地 HTTP 桥（含 agent 端点）
+apps/web/              Next(RSC/vinext) 前端：AgentStudio / AgentTrace / 讲题与课件
+eval/                  20 题固定评测集 + 自检 + 真实评测脚本
+tests/                 原有集成测试（含 live 检查脚本）
+docs/                  架构、沙箱配置、验收记录、演示页
+```
 
-生成接口的验证状态固定为 `not_run`，不能由模型宣称通过。页面“04 / 本地运行验证”需要人工核对 JSON 输入和预期输出、勾选确认后才运行，按精确 JSON 比较显示各例通过/不符/超时等状态；未执行的剩余样例单独标识。修改原文、草稿或撤销确认会卸载解法面板、停止客户端等待并清除结果；重新生成会撤销旧验证，生成失败仍保留同一题目的旧解法文本。修改测试数据或取消勾选也撤销验证结果。所有状态刷新即丢失。
+## License
 
-解法接口独立 45 秒超时、6000 输出 Token 上限、每进程每小时 12 次（失败也计入）、单并发、无缓存、无自动重试。仅允许本机同来源 JSON 请求，拒绝上游重定向，不反射模型错误响应与密钥。提示词的代码限制不是安全沙箱，实际运行受独立容器资源限制保护。
-
-## 页面本地验证
-
-先运行 `colima start tutor-sandbox`，再用 Node 22+ 启动 `pnpm dev`，访问 `http://localhost:3001/`。验证接口只在 Vite 开发模式提供，不需要额外服务器或端口，也不在构建后的 Worker 中开放。容器未启动或镜像缺失时会明确报执行器不可用，不会自动下载、启动虚拟机或执行其他命令。
-
-生成解法后，按输入约定核对“04”中的测试数据。`nums = [1,2]` 不是 JSON，需改成 `[1,2]`；字符串需双引号；多个参数用与 solve(input) 一致的对象结构。答案预期由人核对，不由模型补猜。无序结果题需规范化比较约定，当前按数组顺序精确比较。
-
-开发服务仅绑定 localhost:3001。会话与验证接口检查回环连接、Host、Origin、自定义页面请求头，执行需要随机会话令牌，令牌只保留于页面请求内存、不记日志。每小时最多 12 个本地验证作业、单并发、每作业最多 8 例，不消耗模型额度。开发服务重启/配置热重载会重置令牌及限额。页面断开后当前容器在受限时间内结束并清理，不再启动后续样例；清理无法确认时暂停接受新作业。此接口面向本地可信单用户，不是公网鉴权方案。
-
-来源：[两数之和](https://leetcode.cn/problems/two-sum/)、[无重复字符的最长子串](https://leetcode.cn/problems/longest-substring-without-repeating-characters/)。题意用自编文字概述，讲解、代码及动画由本项目编写。
+[MIT](./LICENSE)

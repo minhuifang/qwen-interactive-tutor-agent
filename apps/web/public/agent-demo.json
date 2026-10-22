@@ -1,0 +1,329 @@
+{
+  "recordedAt": "2026-10-22",
+  "problem": {
+    "title": "两数之和",
+    "statement": "给定一个整数数组 nums 和一个整数目标值 target，请你在该数组中找出和为目标值 target 的两个整数，并返回它们的数组下标。你可以假设每种输入只会对应一个答案，且不能重复使用同一个元素。",
+    "inputContract": "input = { nums: number[], target: number }，返回 [i, j]（i < j）。"
+  },
+  "cases": [
+    {
+      "input": {
+        "nums": [
+          2,
+          7,
+          11,
+          15
+        ],
+        "target": 9
+      },
+      "expected": [
+        0,
+        1
+      ]
+    },
+    {
+      "input": {
+        "nums": [
+          3,
+          2,
+          4
+        ],
+        "target": 6
+      },
+      "expected": [
+        1,
+        2
+      ]
+    },
+    {
+      "input": {
+        "nums": [
+          3,
+          3
+        ],
+        "target": 6
+      },
+      "expected": [
+        0,
+        1
+      ]
+    }
+  ],
+  "result": {
+    "status": "examples_passed",
+    "rounds": 4
+  },
+  "events": [
+    {
+      "type": "meta",
+      "runId": "demo-two-sum",
+      "model": "scripted-policy",
+      "mode": "scripted",
+      "maxRounds": 4,
+      "caseCount": 3,
+      "problem": {
+        "title": "两数之和",
+        "entrypoint": "solve"
+      },
+      "startedAt": 1792661514124,
+      "sandbox": "simulated",
+      "note": "脚本化策略 + 模拟执行结果，用于演示轨迹界面，不是真实模型运行。"
+    },
+    {
+      "type": "round_start",
+      "round": 1
+    },
+    {
+      "type": "thought",
+      "round": 1,
+      "text": "用哈希表把查找降到 O(1)。边遍历边记录「值 → 下标」，遇到 target - nums[i] 就返回。"
+    },
+    {
+      "type": "tool_call",
+      "id": "scripted-1-0",
+      "round": 1,
+      "tool": "run_tests",
+      "args": {
+        "codeBytes": 253,
+        "note": "第一版：单遍哈希表，边存边查"
+      },
+      "code": "function solve(input) {\n  const { nums, target } = input;\n  const seen = new Map();\n  for (let i = 0; i < nums.length; i++) {\n    const need = target - nums[i];\n    if (seen.has(need)) return [need, nums[i]];\n    seen.set(nums[i], i);\n  }\n  return [];\n}"
+    },
+    {
+      "type": "tool_result",
+      "id": "scripted-1-0",
+      "round": 1,
+      "status": "not_passed",
+      "passed": 0,
+      "total": 3,
+      "results": [
+        {
+          "index": 1,
+          "status": "failed",
+          "actual": "[2,7]"
+        },
+        {
+          "index": 2,
+          "status": "failed",
+          "actual": "[2,4]"
+        },
+        {
+          "index": 3,
+          "status": "failed",
+          "actual": "[3,3]"
+        }
+      ],
+      "note": "第一版：单遍哈希表，边存边查"
+    },
+    {
+      "type": "round_end",
+      "round": 1,
+      "verdict": "failed"
+    },
+    {
+      "type": "round_start",
+      "round": 2
+    },
+    {
+      "type": "thought",
+      "round": 2,
+      "text": "三例全部返回了数值本身，不是下标。第 1 例期望 [0,1]，实际是 [2,7]——返回值取错了，应该返回 seen.get(need) 和当前下标 i。"
+    },
+    {
+      "type": "tool_call",
+      "id": "scripted-2-0",
+      "round": 2,
+      "tool": "run_tests",
+      "args": {
+        "codeBytes": 257,
+        "note": "改为返回下标"
+      },
+      "code": "function solve(input) {\n  const { nums, target } = input;\n  const seen = new Map();\n  for (let i = 0; i < nums.length; i++) {\n    const need = target - nums[i];\n    if (seen.has(need)) return [seen.get(need), i];\n    seen.set(nums[i], i);\n  }\n  return [];\n}"
+    },
+    {
+      "type": "tool_result",
+      "id": "scripted-2-0",
+      "round": 2,
+      "status": "not_passed",
+      "passed": 2,
+      "total": 3,
+      "results": [
+        {
+          "index": 1,
+          "status": "passed",
+          "actual": "[0,1]"
+        },
+        {
+          "index": 2,
+          "status": "passed",
+          "actual": "[1,2]"
+        },
+        {
+          "index": 3,
+          "status": "failed",
+          "actual": "[0,0]"
+        }
+      ],
+      "note": "改为返回下标"
+    },
+    {
+      "type": "round_end",
+      "round": 2,
+      "verdict": "failed"
+    },
+    {
+      "type": "round_start",
+      "round": 3
+    },
+    {
+      "type": "thought",
+      "round": 3,
+      "text": "第 1、2 例通了，第 3 例 [3,3] 期望 [0,1] 却返回 [0,0]。原因是当前写法恰好把「同一个元素用两次」也算成了答案：i=0 时先写入 seen，i=1 查到的是自己刚写的。要保证两个下标不同，并且按 i < j 输出。"
+    },
+    {
+      "type": "tool_call",
+      "id": "scripted-3-0",
+      "round": 3,
+      "tool": "run_tests",
+      "args": {
+        "codeBytes": 307,
+        "note": "保证两个下标不同，并按 i < j 排序"
+      },
+      "code": "function solve(input) {\n  const { nums, target } = input;\n  const seen = new Map();\n  for (let i = 0; i < nums.length; i++) {\n    const need = target - nums[i];\n    if (seen.has(need)) {\n      const j = seen.get(need);\n      return j < i ? [j, i] : [i, j];\n    }\n    seen.set(nums[i], i);\n  }\n  return [];\n}"
+    },
+    {
+      "type": "tool_result",
+      "id": "scripted-3-0",
+      "round": 3,
+      "status": "examples_passed",
+      "passed": 3,
+      "total": 3,
+      "results": [
+        {
+          "index": 1,
+          "status": "passed",
+          "actual": "[0,1]"
+        },
+        {
+          "index": 2,
+          "status": "passed",
+          "actual": "[1,2]"
+        },
+        {
+          "index": 3,
+          "status": "passed",
+          "actual": "[0,1]"
+        }
+      ],
+      "note": "保证两个下标不同，并按 i < j 排序"
+    },
+    {
+      "type": "round_end",
+      "round": 3,
+      "verdict": "passed"
+    },
+    {
+      "type": "round_start",
+      "round": 4
+    },
+    {
+      "type": "thought",
+      "round": 4,
+      "text": "三例全部通过，提交。"
+    },
+    {
+      "type": "tool_call",
+      "id": "scripted-4-0",
+      "round": 4,
+      "tool": "finish",
+      "args": {
+        "codeBytes": 307,
+        "approach": "单遍哈希表：遍历数组时，对每个元素先算「还差多少」（need = target - nums[i]），再去表里查这个差值是否出现过。出现过就说明找到了一对，直接返回两个下标；没出现过就把当前值和下标存进表，供后面的元素查。每个元素只进出哈希表一次，所以是线性的。",
+        "steps": [
+          "输入 nums = [2,7,11,15]，target = 9，建空表 seen。",
+          "i = 0，nums[0] = 2，need = 7。表里没有 7，把 2 → 0 存进 seen。",
+          "i = 1，nums[1] = 7，need = 2。表里有 2，下标是 0，返回 [0, 1]。",
+          "再验证重复元素：[3,3]、target = 6。i = 0 存 3 → 0；i = 1 时 need = 3 命中，得到 0，输出前比较大小保证 i < j，返回 [0, 1]。",
+          "如果始终没命中，说明无解，返回空数组。"
+        ],
+        "cautions": [
+          "返回值是下标而不是数值，这是本题最容易写错的地方。",
+          "相同元素不能重复使用，因此必须先查表再存表，且返回前保证两个下标不同。",
+          "以上结论只覆盖 3 组已确认样例，不代表所有输入都正确。"
+        ],
+        "timeComplexity": "O(n)：每个元素最多被访问一次，哈希表查找与插入均摊 O(1)。",
+        "spaceComplexity": "O(n)：最坏情况下要把 n 个元素全部存进哈希表。"
+      },
+      "code": "function solve(input) {\n  const { nums, target } = input;\n  const seen = new Map();\n  for (let i = 0; i < nums.length; i++) {\n    const need = target - nums[i];\n    if (seen.has(need)) {\n      const j = seen.get(need);\n      return j < i ? [j, i] : [i, j];\n    }\n    seen.set(nums[i], i);\n  }\n  return [];\n}"
+    },
+    {
+      "type": "round_end",
+      "round": 4,
+      "verdict": "submitted"
+    },
+    {
+      "type": "final",
+      "status": "examples_passed",
+      "reason": "提交的代码通过了全部 3 个已确认样例。",
+      "solution": {
+        "code": "function solve(input) {\n  const { nums, target } = input;\n  const seen = new Map();\n  for (let i = 0; i < nums.length; i++) {\n    const need = target - nums[i];\n    if (seen.has(need)) {\n      const j = seen.get(need);\n      return j < i ? [j, i] : [i, j];\n    }\n    seen.set(nums[i], i);\n  }\n  return [];\n}",
+        "approach": "单遍哈希表：遍历数组时，对每个元素先算「还差多少」（need = target - nums[i]），再去表里查这个差值是否出现过。出现过就说明找到了一对，直接返回两个下标；没出现过就把当前值和下标存进表，供后面的元素查。每个元素只进出哈希表一次，所以是线性的。",
+        "steps": [
+          "输入 nums = [2,7,11,15]，target = 9，建空表 seen。",
+          "i = 0，nums[0] = 2，need = 7。表里没有 7，把 2 → 0 存进 seen。",
+          "i = 1，nums[1] = 7，need = 2。表里有 2，下标是 0，返回 [0, 1]。",
+          "再验证重复元素：[3,3]、target = 6。i = 0 存 3 → 0；i = 1 时 need = 3 命中，得到 0，输出前比较大小保证 i < j，返回 [0, 1]。",
+          "如果始终没命中，说明无解，返回空数组。"
+        ],
+        "assumptions": [
+          "题目保证最多一个答案，因此找到第一对即可返回。"
+        ],
+        "timeComplexity": "O(n)：每个元素最多被访问一次，哈希表查找与插入均摊 O(1)。",
+        "spaceComplexity": "O(n)：最坏情况下要把 n 个元素全部存进哈希表。",
+        "cautions": [
+          "返回值是下标而不是数值，这是本题最容易写错的地方。",
+          "相同元素不能重复使用，因此必须先查表再存表，且返回前保证两个下标不同。",
+          "以上结论只覆盖 3 组已确认样例，不代表所有输入都正确。"
+        ]
+      },
+      "verification": {
+        "status": "examples_passed",
+        "passed": 3,
+        "total": 3,
+        "codeHash": "07a67e717b5c10fa",
+        "results": [
+          {
+            "status": "passed",
+            "actual": [
+              0,
+              1
+            ]
+          },
+          {
+            "status": "passed",
+            "actual": [
+              1,
+              2
+            ]
+          },
+          {
+            "status": "passed",
+            "actual": [
+              0,
+              1
+            ]
+          }
+        ],
+        "notice": "仅验证了已确认的人工核对样例，通过不代表所有输入都正确。"
+      },
+      "rounds": 4,
+      "usage": {
+        "prompt_tokens": 1920,
+        "completion_tokens": 480,
+        "total_tokens": 2400,
+        "calls": 4
+      },
+      "durationMs": 0
+    }
+  ]
+}

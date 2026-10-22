@@ -7,12 +7,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { GenerationPanel } from '@/components/generation-panel';
 import { StreamTeaching } from '@/components/stream-teaching';
+import { AgentStudio } from '@/components/agent-studio';
 import { lessons } from '@/lib/lessons';
 import { evaluateAnswer } from '../../../packages/lesson-schema/src/assessment';
 import type { Diagnosis, LessonId, Lesson } from '../../../packages/lesson-schema/src/index';
 
 export default function Home() {
-  const [mode, setMode] = useState<'intake' | 'lessons'>('intake');
+  const [mode, setMode] = useState<'agent' | 'intake' | 'lessons'>('agent');
   const [lessonId, setLessonId] = useState<LessonId>('two-sum');
   const [step, setStep] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -49,7 +50,13 @@ export default function Home() {
       <span className="top-note">算法互动课堂 / JavaScript</span>
       <span className="prototype"><span/> 本地教学演示</span>
     </header>
-    <nav className="mode-switch" aria-label="工作区"><Button variant={mode === 'intake' ? 'secondary' : 'ghost'} aria-pressed={mode === 'intake'} onClick={() => { setMode('intake'); setPlaying(false); }}>直接讲题</Button><Button variant={mode === 'lessons' ? 'secondary' : 'ghost'} aria-pressed={mode === 'lessons'} onClick={() => setMode('lessons')}>两道示例课件</Button><span>粘贴题目开始讲解，示例课件提供算法动画</span></nav>
+    <nav className="mode-switch" aria-label="工作区">
+      <Button variant={mode === 'agent' ? 'secondary' : 'ghost'} aria-pressed={mode === 'agent'} onClick={() => { setMode('agent'); setPlaying(false); }}>Agent 解题</Button>
+      <Button variant={mode === 'intake' ? 'secondary' : 'ghost'} aria-pressed={mode === 'intake'} onClick={() => { setMode('intake'); setPlaying(false); }}>直接讲题</Button>
+      <Button variant={mode === 'lessons' ? 'secondary' : 'ghost'} aria-pressed={mode === 'lessons'} onClick={() => setMode('lessons')}>两道示例课件</Button>
+      <span>Agent 自己跑测试直到通过；讲题与课件负责把思路讲清楚</span>
+    </nav>
+    <div hidden={mode !== 'agent'}><AgentStudio visible={mode === 'agent'} /></div>
     <div hidden={mode !== 'intake'}><StreamTeaching visible={mode === 'intake'} /></div>
     <div className="workspace" hidden={mode !== 'lessons'}>
       <aside className="catalog">
