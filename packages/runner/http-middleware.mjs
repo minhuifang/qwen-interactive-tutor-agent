@@ -1,6 +1,7 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { validateJob, verifyJob } from './docker-runner.mjs';
 import { streamAgentRun, parseAgentRequest, AgentRequestError } from '../agent/server.mjs';
+import { streamTeach, parseTeachRequest, TeachRequestError } from '../agent/teaching-server.mjs';
 
 const prefix = '/api/local-runner/';
 const defaultHosts = new Set(['localhost:3001', '127.0.0.1:3001', '[::1]:3001']);
@@ -36,6 +37,7 @@ export function createRunnerMiddleware(run = verifyJob, now = Date.now, { modelF
   let busy = false, blocked = false;
   let calls = [];
   let agentCalls = [];
+  let teachCalls = [];
   return async (req, res, next) => {
     if (!req.url?.startsWith(prefix)) return next();
     const json = (status, value) => {
@@ -53,12 +55,13 @@ export function createRunnerMiddleware(run = verifyJob, now = Date.now, { modelF
     if (req.url === `${prefix}session`) {
       req.resume(); return json(200, { token });
     }
-    if (req.url !== `${prefix}verify` && req.url !== `${prefix}agent`) { req.resume(); return error(404, 'NOT_FOUND', '接口不存在。'); }
+    if (req.url !== `${prefix}verify` && req.url !== `${prefix}agent` && req.url !== `${prefix}teach`) { req.resume(); return error(404, 'NOT_FOUND', '接口不存在。'); }
     const supplied = req.headers['x-tutor-runner-token'];
     if (typeof supplied !== 'string' || Buffer.byteLength(supplied) !== Buffer.byteLength(token) || !timingSafeEqual(Buffer.from(supplied), Buffer.from(token))) {
       req.resume(); return error(403, 'TOKEN', '本地会话已失效，请重新点击运行。');
     }
-    if (blocked) { req.resume(); return error(503, 'CLEANUP', '上次容器清理无法确认，请检查本地 Docker 并重启开发服务。'); }
+    // Teaching never touches a container, so a cleanup problem must not block it.
+    if (blocked && req.url !== `${prefix}teach`) { req.resume(); return error(503, 'CLEANUP', '上次容器清理无法确认，请检查本地 Docker 并重启开发服务。'); }
     if (busy) { req.resume(); return error(429, 'BUSY', '已有任务正在运行，请等待结束。'); }
 
     // ---- Agent run: streams NDJSON, one line per event. ----
@@ -109,6 +112,56 @@ export function createRunnerMiddleware(run = verifyJob, now = Date.now, { modelF
         return;
       } catch {
         if (!streaming) return error(503, 'UNAVAILABLE', '本地 Agent 接口不可用。');
+        try { res.end(); } catch { /* already closed */ }
+        return;
+      } finally { busy = false; }
+    }
+
+    // ---- Teaching session: conversational, so it spans several requests. ----
+    if (req.url === `${prefix}teach`) {
+      teachCalls = teachCalls.filter(t => now() - t < 3600000);
+      if (teachCalls.length >= 60) { req.resume(); return error(429, 'BUDGET', '本机每小时最多 60 次教学交互，避免额度被反复消耗。'); }
+      busy = true;
+      let streaming = false;
+      try {
+        let raw;
+        try { raw = JSON.parse(await readBody(req, 40000)); }
+        catch (cause) {
+          if (cause?.message === 'BODY_TOO_LARGE') return error(413, 'TOO_LARGE', '请求超过 40 KB。');
+          if (cause?.message === 'BODY_TIMEOUT') return error(408, 'TIMEOUT', '请求读取超时。');
+          return error(400, 'INVALID_JSON', '请求不是有效 JSON。');
+        }
+        try { parseTeachRequest(raw); }
+        catch (cause) {
+          if (cause instanceof TeachRequestError) return error(cause.status, 'INVALID_TEACH_INPUT', cause.message);
+          throw cause;
+        }
+        if (res.destroyed || req.aborted) return;
+        teachCalls.push(now());
+        res.writeHead(200, {
+          'Content-Type': 'application/x-ndjson; charset=utf-8',
+          'Cache-Control': 'no-store, no-transform',
+          'X-Content-Type-Options': 'nosniff',
+          'X-Accel-Buffering': 'no',
+        });
+        streaming = true;
+        const controller = new AbortController();
+        const cancel = () => controller.abort();
+        res.once('close', cancel);
+        const write = event => { if (!res.destroyed && !res.writableEnded) res.write(JSON.stringify(event) + '\n'); };
+        try {
+          await streamTeach({ raw, write, signal: controller.signal, modelFactory });
+        } catch (cause) {
+          if (cause instanceof TeachRequestError) write({ type: 'error', message: cause.message });
+          else write({ type: 'error', message: '教学会话中断，已收到的内容保留。' });
+        } finally {
+          res.off('close', cancel);
+          write({ type: 'done' });
+          res.end();
+        }
+        return;
+      } catch {
+        if (!streaming) return error(503, 'UNAVAILABLE', '本地教学接口不可用。');
         try { res.end(); } catch { /* already closed */ }
         return;
       } finally { busy = false; }

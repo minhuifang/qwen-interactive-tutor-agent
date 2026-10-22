@@ -81,3 +81,83 @@ export function createChatModel({ apiKey, model, url, fetcher = fetch, timeoutMs
     }
   };
 }
+
+/**
+ * Streaming chat adapter: yields text deltas as the model produces them, so a
+ * student can interrupt a reply that is still being written. Server-sent events
+ * over the same allow-listed endpoint; the key never follows a redirect.
+ */
+export function createChatStream({ apiKey, model, url, fetcher = fetch, timeoutMs = DEFAULT_TIMEOUT_MS, maxTokens = 4096 }) {
+  return async function* callStream(messages, { signal } = {}) {
+    const controller = new AbortController();
+    const onAbort = () => controller.abort();
+    signal?.addEventListener('abort', onAbort, { once: true });
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetcher(url, {
+        method: 'POST',
+        redirect: 'manual',
+        signal: controller.signal,
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}`, Accept: 'text/event-stream' },
+        body: JSON.stringify({ model, messages, temperature: 0.2, max_tokens: maxTokens, stream: true }),
+      });
+      if (!response.ok) {
+        await response.body?.cancel();
+        if (response.status >= 300 && response.status < 400) throw new ModelError('已拒绝模型接口重定向，密钥不会转发。');
+        throw new ModelError(
+          response.status === 401 ? '模型鉴权失败，请检查 API Key。'
+            : response.status === 429 ? '模型额度或频率受限，请稍后重试。'
+              : `模型服务暂不可用（HTTP ${response.status}）。`,
+          { retryable: response.status === 429 || response.status >= 500 },
+        );
+      }
+      if (!response.body) throw new ModelError('模型未返回流式内容。');
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let pending = '';
+      let bytes = 0;
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          bytes += value.byteLength;
+          if (bytes > MAX_RESPONSE_BYTES) throw new ModelError('模型流式响应超出大小上限。');
+          pending += decoder.decode(value, { stream: true });
+          let end = pending.indexOf('\n');
+          while (end >= 0) {
+            const line = pending.slice(0, end).replace(/\r$/, '');
+            pending = pending.slice(end + 1);
+            const piece = readDelta(line);
+            if (piece) yield piece;
+            end = pending.indexOf('\n');
+          }
+          if (pending.length > 65536) throw new ModelError('模型流式响应单行过长。');
+        }
+        const tail = readDelta(pending.replace(/\r$/, ''));
+        if (tail) yield tail;
+      } finally {
+        await reader.cancel().catch(() => {});
+        reader.releaseLock();
+      }
+    } catch (error) {
+      if (error instanceof ModelError) throw error;
+      if (controller.signal.aborted) throw new ModelError(signal?.aborted ? '已取消。' : '模型响应超时，未自动重试。');
+      throw new ModelError('无法连接模型服务。');
+    } finally {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+    }
+  };
+}
+
+/** One SSE frame → the text delta it carries. Unknown frames are ignored. */
+function readDelta(line) {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith('data:')) return null;
+  const body = trimmed.slice(5).trim();
+  if (!body || body === '[DONE]') return null;
+  let payload;
+  try { payload = JSON.parse(body); } catch { return null; }
+  const delta = payload?.choices?.[0]?.delta?.content;
+  return typeof delta === 'string' && delta ? delta : null;
+}
