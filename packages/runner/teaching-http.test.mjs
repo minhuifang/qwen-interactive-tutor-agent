@@ -7,6 +7,10 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { createRunnerMiddleware } from './http-middleware.mjs';
 
+// These cases assert the no-key behaviour, so pin it regardless of what the
+// developer's apps/web/.env.local happens to contain.
+process.env.TUTOR_NO_MODEL = '1';
+
 const PROBLEM = {
   title: '两数之和',
   statement: '给定一个整数数组 nums 和一个整数目标值 target，返回和为目标值的两个整数的下标。',

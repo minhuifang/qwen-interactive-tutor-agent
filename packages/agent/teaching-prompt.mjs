@@ -54,3 +54,8 @@ export function buildAnswerPrompt({ problem, steps, index, question }) {
 export function buildRevealPrompt({ problem, steps, index }) {
   return `<problem>\n${JSON.stringify({ title: problem?.title || '', statement: problem?.statement || '', inputContract: problem?.inputContract || '' })}\n</problem>\n\n学生要求直接看第 ${index + 1} 步的完整解法。请给出：一句思路概括，然后是完整代码（用代码块），最后用题目里的真实数据走一遍。不要再说「你再想想」。`;
 }
+
+/** The follow-up question the tutor asks after finishing a step in guide mode. */
+export function buildAskPrompt({ problem, steps, index }) {
+  return `<problem>\n${JSON.stringify({ title: problem?.title || '', statement: problem?.statement || '' })}\n</problem>\n\n刚讲完第 ${index + 1} 步：${steps[index]?.title || ''}。\n\n请出一个引导性反问，指向这一步的关键点，让学生自己动脑而不是等答案。只输出问题本身，不超过 40 字，不要解释、不要加引号。`;
+}

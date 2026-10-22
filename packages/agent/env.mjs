@@ -35,6 +35,11 @@ export function loadLocalEnv(files = ['apps/web/.env.local', 'apps/web/.env', '.
  * so a mis-set base URL cannot leak the key to another host.
  */
 export function readModelConfig(env = loadLocalEnv()) {
+  // Tests set this so the "no key ⇒ scripted" path does not depend on whether
+  // the machine happens to have a real key in apps/web/.env.local.
+  if (process.env.TUTOR_NO_MODEL === '1') {
+    throw Object.assign(new Error('测试模式：视为未配置模型。'), { code: 'NOT_CONFIGURED' });
+  }
   const apiKey = (env.DEEPSEEK_API_KEY || '').trim();
   if (!apiKey) throw Object.assign(new Error('未配置 DEEPSEEK_API_KEY。请在 apps/web/.env.local 填写后重启 pnpm dev。'), { code: 'NOT_CONFIGURED' });
   const model = (env.DEEPSEEK_MODEL || '').trim() || 'deepseek-chat';

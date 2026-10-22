@@ -11,7 +11,7 @@
 // so the interaction is still demonstrable. It is labelled as such everywhere it
 // surfaces.
 
-import { buildTeachingSystemPrompt, buildPlanPrompt, buildStepPrompt, buildHintPrompt, buildAnswerPrompt, buildRevealPrompt } from './teaching-prompt.mjs';
+import { buildTeachingSystemPrompt, buildPlanPrompt, buildStepPrompt, buildHintPrompt, buildAnswerPrompt, buildRevealPrompt, buildAskPrompt } from './teaching-prompt.mjs';
 
 export const TEACH_MODES = ['guide', 'explain'];
 export const HINT_LEVELS = [1, 2, 3];
@@ -162,8 +162,25 @@ export class TeachingSession {
       ], '（模型这次没有返回讲解内容，可以重试。）', { signal });
     }
     if (this.mode === 'guide' && !this.revealed) {
-      const ask = this.scripted ? SCRIPTED.steps[index]?.ask : null;
+      const ask = this.scripted
+        ? SCRIPTED.steps[index]?.ask
+        : await this.composeAsk(step.index, { signal });
       if (ask) { this.asked += 1; yield { ask }; }
+    }
+  }
+
+  /** Guide mode asks one question per step; live mode composes it on the spot. */
+  async composeAsk(index, { signal } = {}) {
+    if (!this.callModel) return null;
+    try {
+      const reply = await this.callModel([
+        { role: 'system', content: buildTeachingSystemPrompt({ mode: this.mode }) },
+        { role: 'user', content: buildAskPrompt({ problem: this.problem, steps: this.steps, index }) },
+      ], { signal });
+      const ask = String(reply.content || '').trim().replace(/^问[题：:]\s*/, '').replace(/^[「"]|[」"]$/g, '');
+      return ask ? ask.slice(0, 80) : null;
+    } catch {
+      return null; // a failed question must not fail the step it follows
     }
   }
 

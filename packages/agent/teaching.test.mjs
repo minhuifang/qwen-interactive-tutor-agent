@@ -175,3 +175,36 @@ test('没有流式通道时回退到一次性调用，行为不变', async () =>
   const out = await text(session.teachStep(0));
   assert.equal(out, '一次性讲解内容');
 });
+
+test('live 模式引导：讲完一步会反问一次', async () => {
+  const askReply = '如果只允许你多记一个变量，你会记什么？';
+  const replies = [];
+  const callModel = async messages => {
+    const asked = messages.at(-1).content;
+    if (asked.includes('只返回 JSON')) return { content: '{"steps":[{"title":"看清题意"},{"title":"暴力解"}]}' };
+    if (asked.includes('引导性反问')) { replies.push(asked); return { content: askReply }; }
+    return { content: '这一步的讲解内容。' };
+  };
+  const session = new TeachingSession({ problem: PROBLEM, mode: 'guide', callModel, model: 'test' });
+  await session.plan();
+  const out = await drain(session.teachStep(0));
+  const ask = out.find(piece => piece && typeof piece === 'object' && typeof piece.ask === 'string');
+  assert.ok(ask, 'live 模式也应产生反问');
+  assert.equal(ask.ask, askReply);
+  assert.equal(session.asked, 1);
+  assert.ok(replies.length === 1, '反问是一次独立调用');
+});
+
+test('live 反问失败不会毁掉这一步的讲解', async () => {
+  const callModel = async messages => {
+    const asked = messages.at(-1).content;
+    if (asked.includes('只返回 JSON')) return { content: '{"steps":[{"title":"看清题意"}]}' };
+    if (asked.includes('引导性反问')) throw new Error('model down');
+    return { content: '讲解内容正常送达。' };
+  };
+  const session = new TeachingSession({ problem: PROBLEM, mode: 'guide', callModel });
+  await session.plan();
+  const out = await drain(session.teachStep(0));
+  assert.ok(out.some(piece => typeof piece === 'string' && piece.includes('正常送达')));
+  assert.ok(!out.some(piece => piece && typeof piece === 'object' && 'ask' in piece), '反问失败就省略，不报错');
+});
